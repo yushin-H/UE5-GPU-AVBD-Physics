@@ -1,0 +1,24 @@
+# Visual Studio
+.vs/
+
+# UE5 build artifacts
+Binaries/
+Intermediate/
+Build/
+
+# UE5 saved data (logs, screenshots, editor configs)
+Saved/
+
+# Derived data cache
+DerivedDataCache/
+
+# Generated solution files
+*.sln
+*.suo
+
+# Claude Code memory
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,64 @@
+// AVBD Primal Solve Compute Shader
+// Processes all edges in one color group per dispatch.
+// Graph coloring guarantees no two edges in the same group share a vertex,
+// so concurrent writes to Positions are safe without atomics.
+
+#include "/Engine/Public/Platform.ush"
+
+// Must match FGPUParticle in AVBDSolverGPU.h (48 bytes)
+struct FParticleGPU
+{
+	float3 Position;      // 12
+	float  InvMass;       //  4  -> 16
+	float3 PrevPosition;  // 12
+	float  Pad0;          //  4  -> 32
+	float3 Velocity;      // 12
+	float  Pad1;          //  4  -> 48
+};
+
+// Must match FGPUEdge in AVBDSolverGPU.h (16 bytes)
+struct FEdgeGPU
+{
+	int   A;
+	int   B;
+	float RestLength;
+	float Pad;
+};
+
+RWStructuredBuffer<FParticleGPU> RWParticles;
+StructuredBuffer<FEdgeGPU>       Edges;
+RWStructuredBuffer<float>        RWLambda;
+StructuredBuffer<int>            ColorEdgeIndices;
+
+int   ColorOffset;   // first index in ColorEdgeIndices for this color
+int   ColorCount;    // number of edges in this color
+float Rho;           // AL penalty parameter
+
+[numthreads(64, 1, 1)]
+void MainCS(uint3 DTid : SV_DispatchThreadID)
+{
+	uint localIdx = DTid.x;
+	if (localIdx >= (uint)ColorCount) return;
+
+	int       ei = ColorEdgeIndices[ColorOffset + localIdx];
+	FEdgeGPU  E  = Edges[ei];
+
+	float3 posA = RWParticles[E.A].Position;
+	float3 posB = RWParticles[E.B].Position;
+	float  wA   = RWParticles[E.A].InvMass;
+	float  wB   = RWParticles[E.B].InvMass;
+	float  wSum = wA + wB;
+
+	if (wSum <= 0.0f) return;
+
+	float3 d    = posB - posA;
+	float  dist = length(d);
+	if (dist < 1e-5f) return;
+
+	float3 n    = d / dist;
+	float  C    = dist - E.RestLength;
+	float  corr = -(C + RWLambda[ei] / Rho) / wSum;
+
+	RWParticles[E.A].Position = posA - wA * corr * n;
+	RWParticles[E.B].Position = posB + wB * corr * n;
+}
